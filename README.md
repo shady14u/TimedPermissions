@@ -1,4 +1,4 @@
-﻿**Timed Permissions** allows you to grant permissions or groups for a specific time.  
+**Timed Permissions** allows you to grant permissions or groups for a specific time.  
 
 ## Permissions
 
@@ -51,4 +51,4 @@ Usage example: `/grantperm LaserHydra timedpermissions.use 30d` gives LaserHydra
 }
 ```
 
-- `Wipe Data on New Save (Limited to Certain Games)' -- when set to `true`, automatically wipes the data 
+- `Wipe Data on New Save (Limited to Certain Games)' -- when set to `true`, automatically wipes the data
