@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System;
 using Newtonsoft.Json;
+using System.Collections.ObjectModel;
 
 namespace Oxide.Plugins
 {
@@ -43,9 +44,9 @@ namespace Oxide.Plugins
             });
         }
 
-        private void OnPlayerConnected(BasePlayer player)
+        private void OnUserConnected(IPlayer player)
         {
-            PlayerInformation.Get(player.UserIDString)?.EnsureAllAccess();
+            PlayerInformation.Get(player.Id)?.EnsureAllAccess();
         }
 
         private void OnNewSave(string filename)
@@ -416,10 +417,10 @@ namespace Oxide.Plugins
             private readonly List<ExpiringAccessValue> _groups = new List<ExpiringAccessValue>();
 
             [JsonIgnore]
-            public IReadOnlyCollection<ExpiringAccessValue> Permissions => _permissions.AsReadOnly();
+            public ReadOnlyCollection<ExpiringAccessValue> Permissions => _permissions.AsReadOnly();
 
             [JsonIgnore]
-            public IReadOnlyCollection<ExpiringAccessValue> Groups => _groups.AsReadOnly();
+            public ReadOnlyCollection<ExpiringAccessValue> Groups => _groups.AsReadOnly();
 
             public static PlayerInformation Get(string id) => _playerInformationCollection.FirstOrDefault(p => p.Id == id);
 
