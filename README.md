@@ -1,4 +1,4 @@
-**Timed Permissions** allows you to grant permissions or groups for a specific time.  
+﻿**Timed Permissions** allows you to grant permissions or groups for a specific time.  
 
 ## Permissions
 
@@ -17,7 +17,6 @@ This plugin provides universal chat and console commands. When using a command i
 
 ### Advanced Commands (require `timedpermissions.advanced` permission)
 - `timedpermissions_resetaccess [yes]` -- Reset all access data stored in Timed Permissions and create a backup of that data. Needs to be confirmed by passing `yes` as parameter.  
-- `timedpermissions_ensureaccess [yes]` -- Ensures every player has their groups and permissions assigned. Needs to be confirmed by passing `yes` as parameter.  
 
 ### Placeholders
 These are placeholders used in the commands. They are to be replaced with a specific value when using a command.  
@@ -51,4 +50,4 @@ Usage example: `/grantperm LaserHydra timedpermissions.use 30d` gives LaserHydra
 }
 ```
 
-- `Wipe Data on New Save (Limited to Certain Games)' -- when set to `true`, automatically wipes the data
+- `Wipe Data on New Save (Limited to Certain Games)` -- when set to `true`, automatically wipes the data 

@@ -1,40 +1,51 @@
 using System.Text.RegularExpressions;
 using Oxide.Core.Libraries.Covalence;
 using System.Collections.Generic;
-using Newtonsoft.Json.Linq;
 using System.Linq;
 using System;
 using Newtonsoft.Json;
 
 namespace Oxide.Plugins
 {
-    [Info("Timed Permissions", "LaserHydra", "1.4.0", ResourceId = 1926)]
+    [Info("Timed Permissions", "LaserHydra", "1.5.0")]
     [Description("Allows you to grant permissions or groups for a specific time")]
-    internal class TimedPermissions : CovalencePlugin
+    class TimedPermissions : CovalencePlugin
     {
         private const string AdminPermission = "timedpermissions.use";
         private const string AdvancedAdminPermission = "timedpermissions.advanced";
+        
+        private static TimedPermissions _plugin;
+        private static List<PlayerInformation> _playerInformationCollection = new List<PlayerInformation>();
 
-        private static TimedPermissions _instance;
-        private static List<Player> _players = new List<Player>();
-
+        private Regex _timeSpanPattern = new Regex(@"(?:(?<days>\d{1,3})d)?(?:(?<hours>\d{1,3})h)?(?:(?<minutes>\d{1,3})m)?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private Configuration _config;
         
         #region Hooks & Loading
 
         private void Loaded()
         {
-            _instance = this;
+            _plugin = this;
 
-            MigrateData();
+            LoadData(ref _playerInformationCollection);
 
-            LoadData(ref _players);
-
-            if (_players == null)
+            if (_playerInformationCollection == null)
             {
-                _players = new List<Player>();
-                SaveData(_players);
+                _playerInformationCollection = new List<PlayerInformation>();
+                SaveData(_playerInformationCollection);
             }
+
+            _plugin.timer.Repeat(60, 0, () =>
+            {
+                foreach (PlayerInformation player in _playerInformationCollection)
+                {
+                    player.Update();
+                }
+            });
+        }
+
+        private void OnPlayerConnected(BasePlayer player)
+        {
+            PlayerInformation.Get(player.UserIDString)?.EnsureAllAccess();
         }
 
         private void OnNewSave(string filename)
@@ -46,88 +57,8 @@ namespace Oxide.Plugins
                 string backupFileName;
                 ResetAllAccess(out backupFileName);
 
-                PrintWarning($"New save file detected: all groups and permissions revoked and data cleared. Backup created at {backupFileName}");
+                PrintWarning($"New save file detected: all groups and permissions revoked and data cleared. Backup created at {backupFileName}.json");
             }
-        }
-
-        private void MigrateData()
-        {
-            List<JObject> data = new List<JObject>();
-            LoadData(ref data);
-
-            if (data == null)
-                return;
-
-            foreach (JObject playerData in data)
-            {
-                if (playerData["permissions"] != null)
-                {
-                    JArray permissions = (JArray) playerData["permissions"];
-                    
-                    foreach (JObject obj in permissions)
-                    {
-                        if (obj["permission"] != null)
-                        {
-                            obj["Value"] = obj["permission"]; 
-                            obj.Remove("permission");
-                        }
-
-                        if (obj["_expireDate"] != null)
-                        {
-                            string expireDate = obj["_expireDate"].Value<string>();
-                            
-                            int[] date = (from val in expireDate.Split('/') select Convert.ToInt32(val)).ToArray(); 
-                            obj["ExpireDate"] = new DateTime(date[4], date[3], date[2], date[1], date[0], 0);
-
-                            obj.Remove("_expireDate");
-                        }
-                    }
-                    
-                    playerData["Permissions"] = permissions;
-                    playerData.Remove("permissions");
-                }
-
-                if (playerData["groups"] != null)
-                {
-                    JArray permissions = (JArray)playerData["groups"];
-                    
-                    foreach (JObject obj in permissions)
-                    {
-                        if (obj["group"] != null)
-                        {
-                            obj["Value"] = obj["group"];
-                            obj.Remove("group");
-                        }
-
-                        if (obj["_expireDate"] != null)
-                        {
-                            string expireDate = obj["_expireDate"].Value<string>();
-
-                            int[] date = (from val in expireDate.Split('/') select Convert.ToInt32(val)).ToArray();
-                            obj["ExpireDate"] = new DateTime(date[4], date[3], date[2], date[1], date[0], 0);
-
-                            obj.Remove("_expireDate"); 
-                        }
-                    }
-
-                    playerData["Groups"] = permissions;
-                    playerData.Remove("groups");
-                }
-
-                if (playerData["steamID"] != null)
-                {
-                    playerData["Id"] = playerData["steamID"];
-                    playerData.Remove("steamID");
-                }
-
-                if (playerData["name"] != null)
-                {
-                    playerData["Name"] = playerData["name"];
-                    playerData.Remove("name");
-                }
-            }
-
-            SaveData(data);
         }
 
         #endregion
@@ -147,45 +78,22 @@ namespace Oxide.Plugins
             if (target == null)
                 return;
 
-            var pl = Player.Get(target.Id);
+            var information = PlayerInformation.Get(target.Id);
 
-            if (pl == null)
+            if (information == null)
+            {
                 player.Reply(GetMessage("Player Has No Info", player.Id));
+            }
             else
             {
                 string msg = GetMessage("Player Info", player.Id);
 
-                msg = msg.Replace("{player}", $"{pl.Name} ({pl.Id})");
-                msg = msg.Replace("{groups}", string.Join(", ", (from g in pl.Groups select $"{g.Value} until {g.ExpireDate.ToLongDateString() + " " + g.ExpireDate.ToShortTimeString()} UTC").ToArray()));
-                msg = msg.Replace("{permissions}", string.Join(", ", (from p in pl.Permissions select $"{p.Value} until {p.ExpireDate.ToLongDateString() + " " + p.ExpireDate.ToShortTimeString()} UTC").ToArray()));
+                msg = msg.Replace("{player}", $"{information.Name} ({information.Id})");
+                msg = msg.Replace("{groups}", string.Join(", ", (from g in information.Groups select $"{g.Value} until {g.ExpireDate.ToLongDateString() + " " + g.ExpireDate.ToShortTimeString()} UTC").ToArray()));
+                msg = msg.Replace("{permissions}", string.Join(", ", (from p in information.Permissions select $"{p.Value} until {p.ExpireDate.ToLongDateString() + " " + p.ExpireDate.ToShortTimeString()} UTC").ToArray()));
 
                 player.Reply(msg);
             }
-        }
-
-        [Command("revokeperm"), Permission(AdminPermission)]
-        private void CmdRevokePerm(IPlayer player, string cmd, string[] args)
-        {
-            if (args.Length != 2)
-            {
-                player.Reply($"Syntax: {(player.LastCommand == CommandType.Console ? string.Empty : "/")}revokeperm <player|steamid> <permission>");
-                return;
-            }
-
-            IPlayer target = FindPlayer(args[0], player);
-
-            if (target == null)
-                return;
-
-            Player pl = Player.Get(target.Id);
-            
-            if (pl == null || !pl.Permissions.Any(p => p.Value == args[1].ToLower()))
-            {
-                player.Reply(GetMessage("User Doesn't Have Permission", player.Id).Replace("{target}", target.Name).Replace("{permission}", args[1].ToLower()));
-                return;
-            }
-
-            pl.RemovePermission(args[1].ToLower());
         }
 
         [Command("grantperm"), Permission(AdminPermission)]
@@ -193,7 +101,7 @@ namespace Oxide.Plugins
         {
             if (args.Length != 3)
             {
-                player.Reply($"Syntax: {(player.LastCommand == CommandType.Console ? string.Empty : "/")}grantperm <player|steamid> <permission> <time Ex: 1d12h30m>");
+                player.Reply(GetMessage("Syntax : grantperm", player.Id));
                 return;
             }
 
@@ -209,15 +117,15 @@ namespace Oxide.Plugins
                 return;
             }
 
-            Player.GetOrCreate(target).AddPermission(args[1].ToLower(), DateTime.UtcNow + duration);
+            PlayerInformation.GetOrCreate(target).AddPermission(args[1].ToLower(), DateTime.UtcNow + duration);
         }
 
-        [Command("removegroup"), Permission(AdminPermission)]
-        private void CmdRemoveGroup(IPlayer player, string cmd, string[] args)
+        [Command("revokeperm"), Permission(AdminPermission)]
+        private void CmdRevokePerm(IPlayer player, string cmd, string[] args)
         {
             if (args.Length != 2)
             {
-                player.Reply($"Syntax: {(player.LastCommand == CommandType.Console ? string.Empty : "/")}removegroup <player|steamid> <group>");
+                player.Reply(GetMessage("Syntax : revokeperm", player.Id));
                 return;
             }
 
@@ -226,15 +134,15 @@ namespace Oxide.Plugins
             if (target == null)
                 return;
 
-            Player pl = Player.Get(target.Id);
-
-            if (pl == null || !pl.Groups.Any(p => p.Value == args[1].ToLower()))
+            PlayerInformation information = PlayerInformation.Get(target.Id);
+            
+            if (information == null || !information.Permissions.Any(p => p.Value == args[1].ToLower()))
             {
-                player.Reply(GetMessage("User Isn't In Group", player.Id).Replace("{target}", target.Name).Replace("{group}", args[1].ToLower()));
+                player.Reply(GetMessage("User Doesn't Have Permission", player.Id).Replace("{target}", target.Name).Replace("{permission}", args[1].ToLower()));
                 return;
             }
 
-            pl.RemoveGroup(args[1].ToLower());
+            information.RemovePermission(args[1].ToLower());
         }
 
         [Command("addgroup"), Permission(AdminPermission)]
@@ -242,7 +150,7 @@ namespace Oxide.Plugins
         {
             if (args.Length != 3)
             {
-                player.Reply($"Syntax: {(player.LastCommand == CommandType.Console ? string.Empty : "/")}addgroup <player|steamid> <group> <time Ex: 1d12h30m>");
+                player.Reply(GetMessage("Syntax : addgroup", player.Id));
                 return;
             }
 
@@ -258,7 +166,32 @@ namespace Oxide.Plugins
                 return;
             }
 
-            Player.GetOrCreate(target).AddGroup(args[1], DateTime.UtcNow + duration);
+            PlayerInformation.GetOrCreate(target).AddGroup(args[1], DateTime.UtcNow + duration);
+        }
+
+        [Command("removegroup"), Permission(AdminPermission)]
+        private void CmdRemoveGroup(IPlayer player, string cmd, string[] args)
+        {
+            if (args.Length != 2)
+            {
+                player.Reply(GetMessage("Syntax : removegroup", player.Id));
+                return;
+            }
+
+            IPlayer target = FindPlayer(args[0], player);
+
+            if (target == null)
+                return;
+
+            PlayerInformation information = PlayerInformation.Get(target.Id);
+
+            if (information == null || !information.Groups.Any(p => p.Value == args[1].ToLower()))
+            {
+                player.Reply(GetMessage("User Isn't In Group", player.Id).Replace("{target}", target.Name).Replace("{group}", args[1].ToLower()));
+                return;
+            }
+
+            information.RemoveGroup(args[1].ToLower());
         }
 
         [Command("timedpermissions_resetaccess"), Permission(AdvancedAdminPermission)]
@@ -266,8 +199,8 @@ namespace Oxide.Plugins
         {
             if (args.Length != 1 || !args[0].Equals("yes", StringComparison.InvariantCultureIgnoreCase))
             {
-                player.Reply("Syntax: timedpermissions_resetaccess [yes]");
-                player.Reply("This command will reset all access data and create a backup. Please confirm by calling the command with 'yes' as parameter");
+                player.Reply(GetMessage("Syntax : resetaccess", player.Id));
+                player.Reply(GetMessage("Reset Access Warning", player.Id));
 
                 return;
             }
@@ -275,24 +208,7 @@ namespace Oxide.Plugins
             string backupFileName;
             ResetAllAccess(out backupFileName);
 
-            player.Reply($"All groups and permissions revoked and data cleared. Backup created at {backupFileName}");
-        }
-
-        [Command("timedpermissions_ensureaccess"), Permission(AdvancedAdminPermission)]
-        private void CmdEnsureAccess(IPlayer player, string cmd, string[] args)
-        {
-            if (args.Length != 1 || !args[0].Equals("yes", StringComparison.InvariantCultureIgnoreCase))
-            {
-                player.Reply("Syntax: timedpermissions_ensureaccess [yes]");
-                player.Reply("This command will ensure every player has their permissions and groups assigned. Please confirm by calling the command with 'yes' as parameter");
-
-                return;
-            }
-
-            foreach (Player playerInformation in _players)
-                playerInformation.EnsureAllAccess();
-
-            player.Reply("All players were ensured to have their permissions and groups assigned.");
+            player.Reply(GetMessage("Access Reset Successfully", player.Id).Replace("{filename}", backupFileName));
         }
 
         #endregion
@@ -302,41 +218,48 @@ namespace Oxide.Plugins
         private void ResetAllAccess(out string backupFileName)
         {
             backupFileName = $"{nameof(TimedPermissions)}_Backups/{DateTime.UtcNow.Date:yyyy-MM-dd}_{DateTime.UtcNow:T}";
-            SaveData(_players, backupFileName); // create backup of current data
+            SaveData(_playerInformationCollection, backupFileName); // create backup of current data
 
-            foreach (Player playerInformation in _players)
+            foreach (PlayerInformation playerInformation in _playerInformationCollection)
                 playerInformation.RemoveAllAccess();
 
-            _players = new List<Player>();
-            SaveData(_players);
+            _playerInformationCollection = new List<PlayerInformation>();
+            SaveData(_playerInformationCollection);
         }
 
         #region Time Helper
 
         private bool TryParseTimeSpan(string source, out TimeSpan date)
         {
-            int minutes = 0;
-            int hours = 0;
-            int days = 0;
+            var match = _timeSpanPattern.Match(source);
 
-            Match m = new Regex(@"(\d+?)m", RegexOptions.IgnoreCase).Match(source);
-            Match h = new Regex(@"(\d+?)h", RegexOptions.IgnoreCase).Match(source);
-            Match d = new Regex(@"(\d+?)d", RegexOptions.IgnoreCase).Match(source);
+            if (!match.Success)
+            {
+                date = default(TimeSpan);
+                return false;
+            }
 
-            if (m.Success)
-                minutes = Convert.ToInt32(m.Groups[1].ToString());
+            if (!match.Groups[0].Value.Equals(source))
+            {
+                date = default(TimeSpan);
+                return false;
+            }
 
-            if (h.Success)
-                hours = Convert.ToInt32(h.Groups[1].ToString());
+            Group daysGroup = match.Groups["days"];
+            Group hoursGroup = match.Groups["hours"];
+            Group minutesGroup = match.Groups["minutes"];
 
-            if (d.Success)
-                days = Convert.ToInt32(d.Groups[1].ToString());
+            int days = daysGroup.Success
+                ? int.Parse(daysGroup.Value)
+                : 0;
+            int hours = hoursGroup.Success
+                ? int.Parse(hoursGroup.Value)
+                : 0;
+            int minutes = minutesGroup.Success
+                ? int.Parse(minutesGroup.Value)
+                : 0;
 
-            source = source.Replace(minutes + "m", string.Empty);
-            source = source.Replace(hours + "h", string.Empty);
-            source = source.Replace(days + "d", string.Empty);
-
-            if (!string.IsNullOrEmpty(source) || (!m.Success && !h.Success && !d.Success))
+            if (days + hours + minutes == 0)
             {
                 date = default(TimeSpan);
                 return false;
@@ -395,11 +318,11 @@ namespace Oxide.Plugins
 
         #region Conversion Helper
 
-        private static bool IsConvertibleTo<T>(object s)
+        private static bool IsConvertibleTo<T>(object obj)
         {
             try
             {
-                var parsed = (T)Convert.ChangeType(s, typeof(T));
+                var temp = (T)Convert.ChangeType(obj, typeof(T));
                 return true;
             }
             catch
@@ -422,7 +345,7 @@ namespace Oxide.Plugins
 
         #region Message Wrapper
 
-        public static string GetMessage(string key, string id) => _instance.lang.GetMessage(key, _instance, id);
+        public static string GetMessage(string key, string id) => _plugin.lang.GetMessage(key, _plugin, id);
 
         #endregion
 
@@ -434,12 +357,22 @@ namespace Oxide.Plugins
         {
             lang.RegisterMessages(new Dictionary<string, string>
             {
-                {"No Permission", "You don't have permission to use this command."},
-                {"Invalid Time Format", "Invalid Time Format: Ex: 1d12h30m | d = days, h = hours, m = minutes"},
-                {"Player Has No Info", "There is no info about this player."},
-                {"Player Info", $"Info about <color=#C4FF00>{{player}}</color>:{Environment.NewLine}<color=#C4FF00>Groups</color>: {{groups}}{Environment.NewLine}<color=#C4FF00>Permissions</color>: {{permissions}}"},
-                {"User Doesn't Have Permission", "{target} does not have permission '{permission}'."},
-                {"User Isn't In Group", "{target} isn't in group '{group}'."},
+                ["No Permission"] = "You don't have permission to use this command.",
+                ["Invalid Time Format"] = "Invalid Time Format: Ex: 1d12h30m | d = days, h = hours, m = minutes",
+                ["Player Has No Info"] = "There is no info about this player.",
+                ["Player Info"] = "Information for <color=#C4FF00>{player}</color>:" + Environment.NewLine +
+                                  "<color=#C4FF00>Groups</color>: {groups}" + Environment.NewLine +
+                                  "<color=#C4FF00>Permissions</color>: {permissions}",
+                ["User Doesn't Have Permission"] = "{target} does not have permission '{permission}'.",
+                ["User Isn't In Group"] = "{target} isn't in group '{group}'.",
+                ["Reset Access Warning"] = "This command will reset all access data and create a backup. Please confirm by calling the command with 'yes' as parameter",
+                ["Access Reset Successfully"] = "All groups and permissions revoked and data cleared. Backup created at {filename}.json",
+                ["Syntax : revokeperm"] = "Syntax: revokeperm <player|steamid> <permission>",
+                ["Syntax : grantperm"] = "Syntax: removegroup <player|steamid> <group>",
+                ["Syntax : removegroup"] = "Syntax: removegroup <player|steamid> <group>",
+                ["Syntax : addgroup"] = "Syntax: addgroup <player|steamid> <group> <time Ex: 1d12h30m>",
+                ["Syntax : resetaccess"] = "Syntax: timedpermissions_resetaccess [yes]",
+
             }, this);
         }
 
@@ -468,169 +401,200 @@ namespace Oxide.Plugins
 
         #region Data Structures
 
-        // TODO: do general refactoring & improvements
-        private class Player
+        private class PlayerInformation
         {
-            public readonly List<TimedAccessValue> Permissions = new List<TimedAccessValue>();
-            public readonly List<TimedAccessValue> Groups = new List<TimedAccessValue>();
-            public string Name = "unknown";
-            public string Id = "0";
+            [JsonProperty("Id")]
+            public string Id { get; set; }
 
-            internal static Player Get(string steamId) => _players.Find(p => p.Id == steamId);
+            [JsonProperty("Name")]
+            public string Name { get; set; }
 
-            internal static Player GetOrCreate(IPlayer player)
+            [JsonProperty("Permissions")]
+            private readonly List<ExpiringAccessValue> _permissions = new List<ExpiringAccessValue>();
+
+            [JsonProperty("Groups")]
+            private readonly List<ExpiringAccessValue> _groups = new List<ExpiringAccessValue>();
+
+            [JsonIgnore]
+            public IReadOnlyCollection<ExpiringAccessValue> Permissions => _permissions.AsReadOnly();
+
+            [JsonIgnore]
+            public IReadOnlyCollection<ExpiringAccessValue> Groups => _groups.AsReadOnly();
+
+            public static PlayerInformation Get(string id) => _playerInformationCollection.FirstOrDefault(p => p.Id == id);
+
+            public static PlayerInformation GetOrCreate(IPlayer player)
             {
-                Player pl = Get(player.Id);
+                PlayerInformation information = Get(player.Id);
 
-                if (pl == null)
+                if (information == null)
                 {
-                    pl = new Player(player);
+                    information = new PlayerInformation(player);
 
-                    _players.Add(pl);
-                    SaveData(_players);
+                    _playerInformationCollection.Add(information);
+                    SaveData(_playerInformationCollection);
                 }
 
-                return pl;
+                return information;
             }
 
-            public TimedAccessValue GetTimedPermission(string permission) => Permissions.Find(p => p.Value == permission);
-
-            public TimedAccessValue GetTimedGroup(string group) => Groups.Find(g => g.Value == group);
+            #region Permissions
 
             public void AddPermission(string permission, DateTime expireDate)
             {
-                TimedAccessValue existingPermission = GetTimedPermission(permission);
+                ExpiringAccessValue existingAccess = _permissions.FirstOrDefault(p => p.Value == permission);
 
-                if (existingPermission != null)
+                if (existingAccess != null)
                 {
-                    existingPermission.ExpireDate += expireDate - DateTime.UtcNow;
+                    existingAccess.ExpireDate += expireDate - DateTime.UtcNow;
 
-                    _instance.Puts($"----> {Name} ({Id}) - Permission Extended: {permission} to {existingPermission.ExpireDate - DateTime.UtcNow}" + Environment.NewLine);
+                    _plugin.Puts($"{Name} ({Id}) - Permission time extended: {permission} to {existingAccess.ExpireDate - DateTime.UtcNow}");
                 }
                 else
                 {
-                    Permissions.Add(new TimedAccessValue(permission, expireDate));
-                    _instance.permission.GrantUserPermission(Id, permission, null);
+                    _permissions.Add(new ExpiringAccessValue(permission, expireDate));
+                    _plugin.permission.GrantUserPermission(Id, permission, null);
 
-                    _instance.Puts($"----> {Name} ({Id}) - Permission Granted: {permission} for {expireDate - DateTime.UtcNow}" + Environment.NewLine);
+                    _plugin.Puts($"{Name} ({Id}) - Permission granted: {permission} for {expireDate - DateTime.UtcNow}");
                 }
 
-                SaveData(_players);
+                SaveData(_playerInformationCollection);
             }
 
-            internal void AddGroup(string group, DateTime expireDate)
+            public void RemovePermission(string permission)
             {
-                TimedAccessValue existingGroup = GetTimedGroup(group);
+                ExpiringAccessValue accessValue = _permissions.FirstOrDefault(p => p.Value == permission);
 
-                if (existingGroup != null)
+                if (accessValue == null)
+                    throw new ArgumentException("Player does not have access to the given permission", nameof(permission));
+
+                _permissions.Remove(accessValue);
+                _plugin.permission.RevokeUserPermission(Id, accessValue.Value);
+
+                _plugin.Puts($"{Name} ({Id}) - Permission removed: {accessValue.Value}");
+
+                if (_groups.Count == 0 && _permissions.Count == 0)
+                    _playerInformationCollection.Remove(this);
+
+                SaveData(_playerInformationCollection);
+            }
+
+            #endregion
+
+            #region Groups
+
+            public void AddGroup(string group, DateTime expireDate)
+            {
+                ExpiringAccessValue existingAccess = _groups.FirstOrDefault(g => g.Value == group);
+
+                if (existingAccess != null)
                 {
-                    existingGroup.ExpireDate += expireDate - DateTime.UtcNow;
+                    existingAccess.ExpireDate += expireDate - DateTime.UtcNow;
 
-                    _instance.Puts($"----> {Name} ({Id}) - Group Time Extended: {group} to {existingGroup.ExpireDate - DateTime.UtcNow}" + Environment.NewLine);
+                    _plugin.Puts($"{Name} ({Id}) - Group time extended: {group} to {existingAccess.ExpireDate - DateTime.UtcNow}");
                 }
                 else
                 {
-                    Groups.Add(new TimedAccessValue(group, expireDate));
-                    _instance.permission.AddUserGroup(Id, group);
+                    _groups.Add(new ExpiringAccessValue(group, expireDate));
+                    _plugin.permission.AddUserGroup(Id, group);
 
-                    _instance.Puts($"----> {Name} ({Id}) - Added to Group: {group} for {expireDate - DateTime.UtcNow}" + Environment.NewLine);
+                    _plugin.Puts($"{Name} ({Id}) - Added to group: {group} for {expireDate - DateTime.UtcNow}");
                 }
 
-                SaveData(_players);
+                SaveData(_playerInformationCollection);
             }
 
-            internal void RemovePermission(string permission)
+            public void RemoveGroup(string group)
             {
-                Permissions.Remove(GetTimedPermission(permission));
-                _instance.permission.RevokeUserPermission(Id, permission);
+                var accessValue = _groups.FirstOrDefault(g => g.Value == group);
 
-                _instance.Puts($"----> {Name} ({Id}) - Permission Expired: {permission}" + Environment.NewLine);
+                if (accessValue == null)
+                    throw new ArgumentException("Player does not have access to the given group", nameof(group));
 
-                if (Groups.Count == 0 && Permissions.Count == 0)
-                    _players.Remove(this);
+                _groups.Remove(accessValue);
+                _plugin.permission.RemoveUserGroup(Id, accessValue.Value);
 
-                SaveData(_players);
+                _plugin.Puts($"{Name} ({Id}) - Removed from group: {accessValue.Value}");
+
+                if (_groups.Count == 0 && _permissions.Count == 0)
+                    _playerInformationCollection.Remove(this);
+
+                SaveData(_playerInformationCollection);
             }
 
-            internal void RemoveGroup(string group)
-            {
-                Groups.Remove(GetTimedGroup(group));
-                _instance.permission.RemoveUserGroup(Id, group);
+            #endregion
 
-                _instance.Puts($"----> {Name} ({Id}) - Group Expired: {group}" + Environment.NewLine);
-
-                if (Groups.Count == 0 && Permissions.Count == 0)
-                    _players.Remove(this);
-
-                SaveData(_players);
-            }
+            #region Other
 
             public void RemoveAllAccess()
             {
-                foreach (TimedAccessValue group in Groups)
-                    _instance.permission.RemoveUserGroup(Id, group.Value);
+                foreach (ExpiringAccessValue permission in _permissions)
+                    _plugin.permission.RevokeUserPermission(Id, permission.Value);
 
-                Groups.Clear();
+                _permissions.Clear();
 
-                foreach (TimedAccessValue permission in Permissions)
-                    _instance.permission.RevokeUserPermission(Id, permission.Value);
+                foreach (ExpiringAccessValue group in _groups)
+                    _plugin.permission.RemoveUserGroup(Id, group.Value);
 
-                Permissions.Clear();
+                _groups.Clear();
             }
 
             public void EnsureAllAccess()
             {
-                foreach (TimedAccessValue group in Groups)
-                    _instance.permission.AddUserGroup(Id, group.Value);
+                foreach (ExpiringAccessValue permission in _permissions)
+                    _plugin.permission.GrantUserPermission(Id, permission.Value, null);
 
-                foreach (TimedAccessValue permission in Permissions)
-                    _instance.permission.GrantUserPermission(Id, permission.Value, null);
+                foreach (ExpiringAccessValue group in _groups)
+                    _plugin.permission.AddUserGroup(Id, group.Value);
             }
 
-            private void Update()
+            public void Update()
             {
-                foreach (TimedAccessValue perm in Permissions.ToList())
-                    if (perm.Expired)
-                        RemovePermission(perm.Value);
+                foreach (ExpiringAccessValue permission in _permissions.ToList())
+                    if (permission.IsExpired)
+                        RemovePermission(permission.Value);
 
-                foreach (TimedAccessValue group in Groups.ToList())
-                    if (group.Expired)
+                foreach (ExpiringAccessValue group in _groups.ToList())
+                    if (group.IsExpired)
                         RemoveGroup(group.Value);
             }
 
+            #endregion
+
             public override int GetHashCode() => Id.GetHashCode();
 
-            private Player(IPlayer player)
+            private PlayerInformation(IPlayer player)
             {
                 Id = player.Id;
                 Name = player.Name;
-
-                _instance.timer.Repeat(60, 0, Update);
             }
 
-            public Player()
+            [JsonConstructor]
+            private PlayerInformation()
             {
-                _instance.timer.Repeat(60, 0, Update);
             }
         }
 
-        // TODO: do general refactoring & improvements
-        private class TimedAccessValue
+        private class ExpiringAccessValue
         {
-            public string Value = string.Empty;
-            public DateTime ExpireDate;
+            [JsonProperty]
+            public string Value { get; private set; }
 
-            internal bool Expired => DateTime.Compare(DateTime.UtcNow, ExpireDate) > 0;
+            [JsonProperty]
+            public DateTime ExpireDate { get; set; }
+
+            [JsonIgnore]
+            public bool IsExpired => DateTime.Compare(DateTime.UtcNow, ExpireDate) > 0;
 
             public override int GetHashCode() => Value.GetHashCode();
 
-            internal TimedAccessValue(string value, DateTime expireDate)
+            public ExpiringAccessValue(string value, DateTime expireDate)
             {
                 Value = value;
                 ExpireDate = expireDate;
             }
 
-            public TimedAccessValue()
+            public ExpiringAccessValue()
             {
             }
         }
