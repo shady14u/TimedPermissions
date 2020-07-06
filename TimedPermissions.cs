@@ -8,7 +8,7 @@ using System.Collections.ObjectModel;
 
 namespace Oxide.Plugins
 {
-    [Info("Timed Permissions", "LaserHydra", "1.5.0")]
+    [Info("Timed Permissions", "LaserHydra", "1.5.1")]
     [Description("Allows you to grant permissions or groups for a specific time")]
     class TimedPermissions : CovalencePlugin
     {
@@ -37,9 +37,10 @@ namespace Oxide.Plugins
 
             _plugin.timer.Repeat(60, 0, () =>
             {
-                foreach (PlayerInformation player in _playerInformationCollection)
+                for (int i = _playerInformationCollection.Count; i >= 0; i--)
                 {
-                    player.Update();
+                    PlayerInformation playerInformation = _playerInformationCollection[i];
+                    playerInformation.Update();
                 }
             });
         }
