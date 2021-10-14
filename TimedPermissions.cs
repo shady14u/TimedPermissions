@@ -1,14 +1,15 @@
-using System.Text.RegularExpressions;
-using Oxide.Core.Libraries.Covalence;
-using System.Collections.Generic;
-using System.Linq;
-using System;
 using Newtonsoft.Json;
+using Oxide.Core.Libraries.Covalence;
+using Oxide.Core;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System;
 
 namespace Oxide.Plugins
 {
-    [Info("Timed Permissions", "LaserHydra", "1.5.2")]
+    [Info("Timed Permissions", "LaserHydra", "1.6.0")]
     [Description("Allows you to grant permissions or groups for a specific time")]
     class TimedPermissions : CovalencePlugin
     {
@@ -338,10 +339,10 @@ namespace Oxide.Plugins
         #region Data Helper
 
         private static void LoadData<T>(ref T data, string filename = null) =>
-            data = Core.Interface.Oxide.DataFileSystem.ReadObject<T>(filename ?? nameof(TimedPermissions));
+            data = Interface.Oxide.DataFileSystem.ReadObject<T>(filename ?? nameof(TimedPermissions));
 
         private static void SaveData<T>(T data, string filename = null) =>
-            Core.Interface.Oxide.DataFileSystem.WriteObject(filename ?? nameof(TimedPermissions), data);
+            Interface.Oxide.DataFileSystem.WriteObject(filename ?? nameof(TimedPermissions), data);
 
         #endregion
 
@@ -448,13 +449,18 @@ namespace Oxide.Plugins
 
                 if (existingAccess != null)
                 {
+                    Interface.CallHook("OnTimedPermissionExtended", Id, permission, existingAccess.ExpireDate - DateTime.UtcNow);
+
                     existingAccess.ExpireDate += expireDate - DateTime.UtcNow;
 
                     _plugin.Puts($"{Name} ({Id}) - Permission time extended: {permission} to {existingAccess.ExpireDate - DateTime.UtcNow}");
                 }
                 else
                 {
+                    Interface.CallHook("OnTimedPermissionGranted", Id, permission, expireDate - DateTime.UtcNow);
+
                     _permissions.Add(new ExpiringAccessValue(permission, expireDate));
+
                     _plugin.permission.GrantUserPermission(Id, permission, null);
 
                     _plugin.Puts($"{Name} ({Id}) - Permission granted: {permission} for {expireDate - DateTime.UtcNow}");
@@ -491,13 +497,18 @@ namespace Oxide.Plugins
 
                 if (existingAccess != null)
                 {
+                    Interface.CallHook("OnTimedGroupExtended", Id, group, existingAccess.ExpireDate - DateTime.UtcNow);
+
                     existingAccess.ExpireDate += expireDate - DateTime.UtcNow;
 
                     _plugin.Puts($"{Name} ({Id}) - Group time extended: {group} to {existingAccess.ExpireDate - DateTime.UtcNow}");
                 }
                 else
                 {
+                    Interface.CallHook("OnTimedGroupAdded", Id, group, expireDate - DateTime.UtcNow);
+
                     _groups.Add(new ExpiringAccessValue(group, expireDate));
+
                     _plugin.permission.AddUserGroup(Id, group);
 
                     _plugin.Puts($"{Name} ({Id}) - Added to group: {group} for {expireDate - DateTime.UtcNow}");
