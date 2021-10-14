@@ -9,7 +9,7 @@ using System;
 
 namespace Oxide.Plugins
 {
-    [Info("Timed Permissions", "LaserHydra", "1.5.2")]
+    [Info("Timed Permissions", "LaserHydra", "1.6.0")]
     [Description("Allows you to grant permissions or groups for a specific time")]
     class TimedPermissions : CovalencePlugin
     {
