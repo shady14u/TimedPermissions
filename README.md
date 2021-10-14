@@ -1,5 +1,9 @@
 ﻿**Timed Permissions** allows you to grant permissions or groups for a specific time.  
 
+## Donations
+
+Please consider donating to support me and help me put more time into my plugins. You can donate, by clicking [here](https://laserhydra.com/).
+
 ## Permissions
 
 - `timedpermissions.use` -- Allows player to use most of the commands
@@ -31,6 +35,16 @@ Usage example: `/grantperm LaserHydra timedpermissions.use 30d` gives LaserHydra
   - m = minutes  
 - `[yes]` -- text 'yes' needs to be given to confirm action
 
+## Configuration
+
+```json
+{  
+  "Wipe Data on New Save (Limited to Certain Games)": false  
+}
+```
+
+- `Wipe Data on New Save (Limited to Certain Games)` -- when set to `true`, automatically wipes the data 
+
 ## Localization
 
 ```json
@@ -42,12 +56,40 @@ Usage example: `/grantperm LaserHydra timedpermissions.use 30d` gives LaserHydra
 }
 ```
 
-## Configuration
+## Developer Hooks
 
-```json
-{  
-  "Wipe Data on New Save (Limited to Certain Games)": false  
-}
+### OnTimedPermissionGranted
+
+Called right before timed permission is granted.
+No return behaviour.
+
+```csharp
+void OnTimedPermissionGranted(string Id, string permission, TimeSpan duration)
 ```
 
-- `Wipe Data on New Save (Limited to Certain Games)` -- when set to `true`, automatically wipes the data 
+### OnTimedPermissionExtended
+
+Called right before timed permission time is extended.
+No return behaviour.
+
+```csharp
+void OnTimedPermissionExtended(string Id, string permission, TimeSpan duration)
+```
+
+### OnTimedGroupAdded
+
+Called right before the player is added to a group for a specific time.
+No return behaviour.
+
+```csharp
+void OnTimedGroupAdded(string Id, string group, TimeSpan duration)
+```
+
+### OnTimedPermissionExtended
+
+Called right before timed group time is extended.
+No return behaviour.
+
+```csharp
+void OnTimedGroupExtended(string Id, string group, TimeSpan duration)
+```
