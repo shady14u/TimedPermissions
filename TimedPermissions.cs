@@ -167,6 +167,7 @@ namespace Oxide.Plugins
 
             foreach (var target in players.Connected)
             {
+                target.Reply(GetMessage("Add Active Message", target.Id).Replace("{group}",args[0]));
                 PlayerInformation.GetOrCreate(target).AddGroup(args[0], DateTime.UtcNow + duration);
             }
             
@@ -401,6 +402,7 @@ namespace Oxide.Plugins
                 ["Syntax : addgroup"] = "Syntax: addgroup <player|steamid> <group> <time Ex: 1d12h30m>",
                 ["Syntax : addactive"] = "Syntax: addactive <group> <time Ex: 1d12h30m>",
                 ["Syntax : resetaccess"] = "Syntax: timedpermissions_resetaccess [yes]",
+                ["Add Active Message"] = "All Active Players have been added to {group} for a limited time.",
 
             }, this);
         }
